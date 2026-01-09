@@ -1,0 +1,22 @@
+[package]
+name = "myhdf5"
+version = "0.0.1"
+description = "Online service to explore and visualise HDF5 files"
+authors = ["European Synchrotron Radiation Facility"]
+license = "MIT"
+repository = "https://gitlab.esrf.fr/ui/myhdf5"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
