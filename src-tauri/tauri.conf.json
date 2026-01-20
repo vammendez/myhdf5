@@ -19,6 +19,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["h5", "hdf5", "hdf"],
+        "name": "HDF5 File",
+        "description": "HDF5 Data File",
+        "mimeType": "application/x-hdf5"
+      }
+    ],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
@@ -26,6 +34,7 @@
     }
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "myHDF5",
@@ -35,11 +44,15 @@
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": true
+        "dragDropEnabled": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   }
 }
