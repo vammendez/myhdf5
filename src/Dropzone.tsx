@@ -16,9 +16,7 @@ import {
   getFileSize,
   getInitialFilePath, 
   isTauri, 
-  openNativeFileDialog,
   readFileAsBuffer,
-  showFileInExplorer,
 } from './tauri-utils';
 import { getViewerLink } from './utils';
 
@@ -77,13 +75,17 @@ function Dropzone(props: PropsWithChildren<Props>) {
   // Handle file association (double-click to open)
   useEffect(() => {
     console.log('[Dropzone] useEffect running, isTauri:', isTauri());
-    if (!isTauri()) return;
+    if (!isTauri()) {
+      return;
+    }
     
     let didLoadFile = false;
     
-    getInitialFilePath().then(async (filePath) => {
+    void getInitialFilePath().then(async (filePath) => {
       console.log('[Dropzone] getInitialFilePath returned:', filePath);
-      if (!filePath || didLoadFile) return;
+      if (!filePath || didLoadFile) {
+        return;
+      }
       
       didLoadFile = true; // Prevent double-loading in React Strict Mode
       
@@ -94,7 +96,12 @@ function Dropzone(props: PropsWithChildren<Props>) {
       const fileSize = await getFileSize(filePath);
       console.log('[Dropzone] File size:', fileSize, 'bytes, limit:', MAX_DIRECT_LOAD_SIZE, 'bytes');
       
-      if (fileSize !== null && fileSize <= MAX_DIRECT_LOAD_SIZE) {
+      if (fileSize === null) {
+        // Could not get file size - show pending overlay to let user select via picker
+        console.log('[Dropzone] Could not get file size, showing pending overlay');
+        setPendingFileName(fileName);
+        setPendingFilePath(filePath);
+      } else if (fileSize <= MAX_DIRECT_LOAD_SIZE) {
         // Small file: load directly into memory
         console.log('[Dropzone] File is small enough, loading directly');
         setIsLoading(true);
@@ -108,70 +115,40 @@ function Dropzone(props: PropsWithChildren<Props>) {
           // Clear the temp file now that we've loaded successfully
           if (isTauri()) {
             const { remove } = await import('@tauri-apps/plugin-fs');
-            const tempDir = await import('@tauri-apps/api/path').then(m => m.tempDir());
+            const tempDir = await import('@tauri-apps/api/path').then((m) => m.tempDir());
             const tempPath = `${await tempDir}myhdf5_open_file.txt`;
-            try { await remove(tempPath); } catch (e) { /* ignore */ }
+            try {
+              await remove(tempPath);
+            } catch {
+              /* ignore */
+            }
           }
           // handleFiles will clear loading state
         } else {
-          // Failed to read, show pending to use Explorer
+          // Failed to read, show pending to use picker
           setIsLoading(false);
           setPendingFileName(fileName);
           setPendingFilePath(filePath);
         }
       } else {
-        // Large file: show instructions to drag and drop
-        console.log('[Dropzone] File is too large, showing pending overlay');
+        // Large file: exceeds MAX_DIRECT_LOAD_SIZE, show instructions to use picker or drag-and-drop
+        console.log('[Dropzone] File is too large (', fileSize, 'bytes), showing pending overlay');
         setPendingFileName(fileName);
         setPendingFilePath(filePath);
       }
+    }).catch((error) => {
+      console.error('[Dropzone] Error loading initial file:', error);
     });
   }, [handleFiles]);
 
   // Handle clicking on pending file - open file picker
-  const handlePendingClick = useCallback(async () => {
-    console.log('[Dropzone] handlePendingClick called, pendingFilePath:', pendingFilePath);
-    if (pendingFilePath) {
-      // Open file picker - it will open in default location but still useful
-      const selectedPath = await openNativeFileDialog(pendingFilePath);
-      console.log('[Dropzone] Selected path from dialog:', selectedPath);
-      
-      if (selectedPath) {
-        // Try to load the selected file
-        const fileSize = await getFileSize(selectedPath);
-        console.log('[Dropzone] Selected file size:', fileSize, 'bytes');
-        
-        if (fileSize !== null && fileSize <= MAX_DIRECT_LOAD_SIZE) {
-          // Small enough - read directly
-          console.log('[Dropzone] Loading selected file into memory');
-          setIsLoading(true);
-          const buffer = await readFileAsBuffer(selectedPath);
-          console.log('[Dropzone] Buffer loaded:', buffer?.byteLength, 'bytes');
-          if (buffer) {
-            const fileName = getFileName(selectedPath);
-            const file = new File([buffer], fileName, { type: 'application/x-hdf5' });
-            await handleFiles([file]);
-          } else {
-            setIsLoading(false);
-          }
-        } else {
-          // Still too large - show alert and keep showing pending overlay
-          console.log('[Dropzone] File still too large after selection');
-          const sizeMB = Math.round((fileSize || 0) / 1024 / 1024);
-          alert(
-            `This file is too large (${sizeMB} MB).\n\n` +
-            `Please drag and drop it from Explorer instead to avoid loading the entire file into memory at once.`
-          );
-          setPendingFileName(getFileName(selectedPath));
-          setPendingFilePath(selectedPath);
-        }
-      } else {
-        console.log('[Dropzone] No file selected (dialog cancelled)');
-      }
-    } else {
-      open();
-    }
-  }, [pendingFilePath, handleFiles, open]);
+  const handlePendingClick = useCallback(() => {
+    console.log('[Dropzone] handlePendingClick called - opening browser file picker');
+    // Always use the browser's file picker which handles large files via object URLs
+    // This provides consistent behavior with the "Select HDF5 files" button
+    // and avoids loading entire files into memory
+    open();
+  }, [open]);
 
   return (
     <div {...getRootProps({ className: styles.zone })}>
@@ -183,7 +160,7 @@ function Dropzone(props: PropsWithChildren<Props>) {
       )}
       {isLoading && (
         <div className={styles.loading}>
-          <div className={styles.spinner}></div>
+          <div className={styles.spinner} />
           <p>Loading {pendingFileName}...</p>
         </div>
       )}
