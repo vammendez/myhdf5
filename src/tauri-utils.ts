@@ -44,22 +44,33 @@ export function getFileName(filePath: string): string {
  */
 export async function getInitialFilePath(): Promise<string | null> {
   // Check if running in Tauri
+  console.log('[tauri-utils] getInitialFilePath called, isTauri:', isTauri());
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
+      console.log('[tauri-utils] About to invoke get_initial_file');
       const filePath = await invoke<string | null>('get_initial_file');
+      console.log('[tauri-utils] get_initial_file returned:', filePath);
       
       if (filePath) {
         const ext = filePath.toLowerCase();
         if (ext.endsWith('.h5') || ext.endsWith('.hdf5') || ext.endsWith('.hdf') ||
             ext.endsWith('.nxs') || ext.endsWith('.nx') || ext.endsWith('.nexus')) {
+          console.log('[tauri-utils] Valid HDF5 file, returning path');
           return filePath;
+        } else {
+          console.log('[tauri-utils] File has wrong extension');
         }
+      } else {
+        console.log('[tauri-utils] No file path returned from invoke');
       }
     } catch (error) {
       console.error('[tauri-utils] Error getting initial file:', error);
     }
+  } else {
+    console.log('[tauri-utils] Not running in Tauri environment');
   }
+  console.log('[tauri-utils] Returning null');
   return null;
 }
 

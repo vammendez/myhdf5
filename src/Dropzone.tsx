@@ -22,7 +22,7 @@ import { getViewerLink } from './utils';
 
 // Maximum file size (in bytes) to load directly into memory
 // Files larger than this will require using the file picker
-const MAX_DIRECT_LOAD_SIZE = 4 * 1024 * 1024 * 1024; // 4 GB
+const MAX_DIRECT_LOAD_SIZE = 1 * 1024 * 1024 * 1024; // 1 GB
 
 interface DropzoneContextValue {
   openFilePicker: () => void;
@@ -37,6 +37,7 @@ function Dropzone(props: PropsWithChildren<Props>) {
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLargeFile, setIsLargeFile] = useState(false);
 
   const openFiles = useStore((state) => state.openFiles);
   const navigate = useNavigate();
@@ -62,6 +63,7 @@ function Dropzone(props: PropsWithChildren<Props>) {
       setPendingFileName(null);
       setPendingFilePath(null);
       setIsLoading(false);
+      setIsLargeFile(false);
     },
     [openFiles, navigate],
   );
@@ -74,7 +76,6 @@ function Dropzone(props: PropsWithChildren<Props>) {
 
   // Handle file association (double-click to open)
   useEffect(() => {
-    console.log('[Dropzone] useEffect running, isTauri:', isTauri());
     if (!isTauri()) {
       return;
     }
@@ -82,7 +83,6 @@ function Dropzone(props: PropsWithChildren<Props>) {
     let didLoadFile = false;
     
     void getInitialFilePath().then(async (filePath) => {
-      console.log('[Dropzone] getInitialFilePath returned:', filePath);
       if (!filePath || didLoadFile) {
         return;
       }
@@ -90,51 +90,50 @@ function Dropzone(props: PropsWithChildren<Props>) {
       didLoadFile = true; // Prevent double-loading in React Strict Mode
       
       const fileName = getFileName(filePath);
-      console.log('[Dropzone] fileName:', fileName);
+      
+      // Helper to clean up temp file
+      const cleanupTempFile = async () => {
+        if (isTauri()) {
+          try {
+            const { remove } = await import('@tauri-apps/plugin-fs');
+            const tempDir = await import('@tauri-apps/api/path').then((m) => m.tempDir());
+            const tempPath = `${await tempDir}myhdf5_open_file.txt`;
+            await remove(tempPath);
+          } catch {
+            /* ignore */
+          }
+        }
+      };
       
       // Check file size to decide loading strategy
       const fileSize = await getFileSize(filePath);
-      console.log('[Dropzone] File size:', fileSize, 'bytes, limit:', MAX_DIRECT_LOAD_SIZE, 'bytes');
       
       if (fileSize === null) {
-        // Could not get file size - show pending overlay to let user select via picker
-        console.log('[Dropzone] Could not get file size, showing pending overlay');
-        setPendingFileName(fileName);
-        setPendingFilePath(filePath);
+        // Could not get file size - fail silently
+        await cleanupTempFile();
       } else if (fileSize <= MAX_DIRECT_LOAD_SIZE) {
         // Small file: load directly into memory
-        console.log('[Dropzone] File is small enough, loading directly');
         setIsLoading(true);
         
         const buffer = await readFileAsBuffer(filePath);
-        console.log('[Dropzone] Buffer loaded, size:', buffer?.byteLength);
         if (buffer) {
           // Create a File object from the buffer
           const file = new File([buffer], fileName, { type: 'application/x-hdf5' });
           await handleFiles([file]);
           // Clear the temp file now that we've loaded successfully
-          if (isTauri()) {
-            const { remove } = await import('@tauri-apps/plugin-fs');
-            const tempDir = await import('@tauri-apps/api/path').then((m) => m.tempDir());
-            const tempPath = `${await tempDir}myhdf5_open_file.txt`;
-            try {
-              await remove(tempPath);
-            } catch {
-              /* ignore */
-            }
-          }
+          await cleanupTempFile();
           // handleFiles will clear loading state
         } else {
-          // Failed to read, show pending to use picker
+          // Failed to read - just stop loading
           setIsLoading(false);
-          setPendingFileName(fileName);
-          setPendingFilePath(filePath);
+          await cleanupTempFile();
         }
       } else {
         // Large file: exceeds MAX_DIRECT_LOAD_SIZE, show instructions to use picker or drag-and-drop
-        console.log('[Dropzone] File is too large (', fileSize, 'bytes), showing pending overlay');
         setPendingFileName(fileName);
         setPendingFilePath(filePath);
+        setIsLargeFile(true);
+        // Don't cleanup temp file yet - we're showing the pending overlay
       }
     }).catch((error) => {
       console.error('[Dropzone] Error loading initial file:', error);
@@ -142,11 +141,25 @@ function Dropzone(props: PropsWithChildren<Props>) {
   }, [handleFiles]);
 
   // Handle clicking on pending file - open file picker
-  const handlePendingClick = useCallback(() => {
-    console.log('[Dropzone] handlePendingClick called - opening browser file picker');
-    // Always use the browser's file picker which handles large files via object URLs
-    // This provides consistent behavior with the "Select HDF5 files" button
-    // and avoids loading entire files into memory
+  const handlePendingClick = useCallback(async () => {
+    // Clean up temp file
+    if (isTauri()) {
+      try {
+        const { remove } = await import('@tauri-apps/plugin-fs');
+        const tempDir = await import('@tauri-apps/api/path').then((m) => m.tempDir());
+        const tempPath = `${await tempDir}myhdf5_open_file.txt`;
+        await remove(tempPath);
+      } catch {
+        /* ignore */
+      }
+    }
+    
+    // Clear pending state
+    setPendingFileName(null);
+    setPendingFilePath(null);
+    setIsLargeFile(false);
+    
+    // Open the browser's file picker
     open();
   }, [open]);
 
@@ -164,11 +177,24 @@ function Dropzone(props: PropsWithChildren<Props>) {
           <p>Loading {pendingFileName}...</p>
         </div>
       )}
-      {pendingFileName && pendingFilePath && !isLoading && (
-        <div className={styles.pendingFile} onClick={handlePendingClick}>
-          <p>Click to select <strong>{pendingFileName}</strong></p>
-          <p className={styles.pendingHint}>For large files, please drag and drop from Explorer instead.</p>
-          <p className={styles.pendingHint}>This avoids loading the entire file into memory at once.</p>
+      {pendingFileName && pendingFilePath && !isLoading && isLargeFile && (
+        <div className={styles.pendingFile}>
+          <p>Please drag and drop the file here due to technical limitations of this app.</p>
+          <p className={styles.pendingHint}>
+            If you prefer, you can browse the file by clicking{' '}
+            <span 
+              onClick={handlePendingClick}
+              style={{ 
+                color: '#4a9eff', 
+                textDecoration: 'underline', 
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Here
+            </span>
+            .
+          </p>
         </div>
       )}
       <DropzoneContext.Provider value={{ openFilePicker: open }}>

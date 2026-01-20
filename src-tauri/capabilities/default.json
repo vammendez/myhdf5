@@ -18,6 +18,14 @@
       "identifier": "fs:allow-read-dir", 
       "allow": [{ "path": "**" }]
     },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [{ "path": "$TEMP/*" }]
+    },
     "dialog:allow-open",
     "dialog:allow-save",
     "shell:allow-execute",

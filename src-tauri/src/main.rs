@@ -16,14 +16,15 @@ fn get_initial_file() -> Option<String> {
     if temp_file.exists() {
         if let Ok(content) = fs::read_to_string(&temp_file) {
             let path = content.trim().to_string();
+            // Always delete the temp file after reading it
+            let _ = fs::remove_file(&temp_file);
             if !path.is_empty() {
-                // Only delete after successfully returning the path
-                // Keep the file for subsequent calls (React Strict Mode calls useEffect twice)
                 return Some(path);
             }
+        } else {
+            // If we can't read it, delete it
+            let _ = fs::remove_file(&temp_file);
         }
-        // If we got here, either read failed or path was empty - delete the file
-        let _ = fs::remove_file(&temp_file);
     }
     
     None
