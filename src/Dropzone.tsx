@@ -115,7 +115,7 @@ function Dropzone(props: PropsWithChildren<Props>) {
           // Clear the temp file now that we've loaded successfully
           if (isTauri()) {
             const { remove } = await import('@tauri-apps/plugin-fs');
-            const tempDir = await import('@tauri-apps/api/path').then(async (m) => m.tempDir());
+            const tempDir = await import('@tauri-apps/api/path').then((m) => m.tempDir());
             const tempPath = `${await tempDir}myhdf5_open_file.txt`;
             try {
               await remove(tempPath);
@@ -131,7 +131,7 @@ function Dropzone(props: PropsWithChildren<Props>) {
           setPendingFilePath(filePath);
         }
       } else {
-        // Large file (> 4GB): show instructions to use picker or drag-and-drop
+        // Large file: exceeds MAX_DIRECT_LOAD_SIZE, show instructions to use picker or drag-and-drop
         console.log('[Dropzone] File is too large (', fileSize, 'bytes), showing pending overlay');
         setPendingFileName(fileName);
         setPendingFilePath(filePath);
